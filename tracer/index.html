@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MapLibre Tracer (OpenFreeMap)</title>
+    
+    <!-- MapLibre GL JS (v2.4.0 for Sandbox Safety) -->
+    <link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+
+    <!-- COMPATIBILITY SHIM -->
+    <script>
+        window.mapboxgl = maplibregl;
+    </script>
+
+    <!-- Mapbox GL Draw -->
+    <script src="https://unpkg.com/@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css" type="text/css" />
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Sidebar Styling */
+        #sidebar { 
+            width: 320px; 
+            padding: 20px; 
+            background: #1e293b; 
+            color: #e2e8f0; 
+            display: flex; 
+            flex-direction: column; 
+            border-right: 1px solid #334155; 
+            z-index: 10;
+        }
+        
+        h2 { margin-top: 0; font-size: 1.2rem; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+        h3 { font-size: 0.85rem; color: #94a3b8; margin-top: 20px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        
+        .instruction { 
+            font-size: 0.85rem; 
+            color: #cbd5e1; 
+            background: #334155; 
+            padding: 10px; 
+            border-radius: 6px; 
+            line-height: 1.5; 
+        }
+
+        /* Controls */
+        .control-group { background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155; }
+        input[type="file"] { width: 100%; font-size: 0.8rem; margin-bottom: 10px; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        input[type="text"] { 
+            width: 100%; padding: 8px; background: #1e293b; border: 1px solid #475569; color: white; border-radius: 4px; 
+        }
+        input[type="text"]:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Buttons */
+        button { 
+            padding: 12px; 
+            margin-top: 10px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            border-radius: 4px; 
+            border: none;
+            transition: all 0.2s; 
+            width: 100%;
+        }
+        .btn-action { background: #3b82f6; color: white; }
+        .btn-action:hover { background: #2563eb; }
+        .btn-export { background: #22c55e; color: white; }
+        .btn-export:hover { background: #16a34a; }
+
+        /* Output Area */
+        textarea { 
+            flex-grow: 1; 
+            margin-top: 15px; 
+            background: #020617; 
+            color: #4ade80; 
+            border: 1px solid #334155; 
+            padding: 10px; 
+            font-family: 'Courier New', monospace; 
+            font-size: 11px; 
+            resize: none; 
+            border-radius: 4px;
+        }
+
+        /* Map Container */
+        #map { flex-grow: 1; background: #0f172a; position: relative; }
+
+        /* Loader */
+        #loader {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 20;
+            flex-direction: column;
+        }
+
+        /* Custom Anchor Markers */
+        .anchor-marker {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid white;
+            cursor: move;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            z-index: 30; /* Ensure markers are above image */
+        }
+        .anchor-tl { background: #ef4444; } /* Red - Top Left */
+        .anchor-tr { background: #22c55e; } /* Green - Top Right */
+        .anchor-bl { background: #3b82f6; } /* Blue - Bottom Left */
+
+        /* Fix drawing tool icon visibility */
+        .mapbox-gl-draw_ctrl-draw-btn {
+            box-sizing: border-box;
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2><i class="fa-solid fa-layer-group"></i> MapLibre Tracer</h2>
+        
+        <div class="instruction">
+            <strong>Controls:</strong><br>
+            • 🖱️ Left Click: Pan<br>
+            • 🖱️ Right Click: <strong>Rotate Map</strong><br>
+            • 🖱️ Ctrl + Drag: Pitch (3D)<br>
+        </div>
+
+        <h3>1. Floor Plan</h3>
+        <div class="control-group">
+            <input type="file" id="imgUpload" accept="image/*">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px;">
+                <span>Opacity</span>
+                <span id="opacityVal">70%</span>
+            </div>
+            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.7">
+        </div>
+
+        <h3>2. Selected Room</h3>
+        <div class="control-group">
+            <label style="font-size: 12px; display:block; margin-bottom:5px; color:#94a3b8;">Room Name</label>
+            <input type="text" id="propName" placeholder="Select a polygon first..." disabled>
+            <label style="font-size: 12px; display:block; margin-top:10px; margin-bottom:5px; color:#94a3b8;">ID (Optional)</label>
+            <input type="text" id="propId" placeholder="Auto-generated" disabled>
+        </div>
+
+        <h3>3. Data</h3>
+        <button onclick="exportGeoJSON()" class="btn-export"><i class="fa-solid fa-download"></i> Export GeoJSON</button>
+        <textarea id="output" placeholder="Draw rooms and click Export..."></textarea>
+    </div>
+
+    <div id="map">
+        <div id="loader">
+            <i class="fa-solid fa-spinner fa-spin fa-2x mb-2"></i>
+            <span>Loading Map...</span>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let draw;
+
+        // --- 1. INITIALIZE MAPLIBRE ---
+        async function initMap() {
+            const loader = document.getElementById('loader');
+            try {
+                // Worker fix for sandbox
+                const workerUrl = 'https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl-csp-worker.js';
+                const response = await fetch(workerUrl);
+                const workerScript = await response.text();
+                const blob = new Blob([workerScript], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                maplibregl.workerUrl = blobUrl;
+
+                // Fetch style
+                const styleResponse = await fetch('https://tiles.openfreemap.org/styles/bright');
+                const styleJson = await styleResponse.json();
+
+                map = new maplibregl.Map({
+                    container: 'map',
+                    style: styleJson, 
+                    center: [-74.0060, 40.7128], 
+                    zoom: 18,
+                    pitch: 0, 
+                    bearing: 0, 
+                    antialias: true,
+                    localIdeographFontFamily: false 
+                });
+
+                map.addControl(new maplibregl.NavigationControl());
+
+                map.on('load', () => {
+                    loader.style.display = 'none';
+                    
+                    // FIX: Add the Mapbox class to the map container manually
+                    // This fixes the broken drawing tool buttons
+                    map.getContainer().classList.add('mapboxgl-map');
+                    
+                    setupDrawingTools();
+                    URL.revokeObjectURL(blobUrl);
+                });
+
+            } catch (e) {
+                console.error("MapLibre initialization failed:", e);
+                loader.innerHTML = `<div style="color:#ef4444; padding:20px; text-align:center;">Error: ${e.message}</div>`;
+            }
+        }
+
+        // --- 2. SETUP DRAWING TOOLS ---
+        function setupDrawingTools() {
+            // Use Default Styles (Most reliable)
+            draw = new MapboxDraw({
+                displayControlsDefault: false,
+                controls: {
+                    polygon: true,
+                    line_string: true,
+                    trash: true
+                }
+            });
+            
+            map.addControl(draw, 'top-right');
+
+            map.on('draw.selectionchange', updatePropertiesPanel);
+            
+            // Property Sync Logic
+            document.getElementById('propName').addEventListener('input', (e) => {
+                const selected = draw.getSelected();
+                if (selected.features.length > 0) draw.setFeatureProperty(selected.features[0].id, 'name', e.target.value);
+            });
+            document.getElementById('propId').addEventListener('input', (e) => {
+                const selected = draw.getSelected();
+                if (selected.features.length > 0) draw.setFeatureProperty(selected.features[0].id, 'customId', e.target.value);
+            });
+        }
+
+        function updatePropertiesPanel(e) {
+            const nameInput = document.getElementById('propName');
+            const idInput = document.getElementById('propId');
+            
+            if (e.features.length > 0) {
+                const feature = e.features[0];
+                if (feature.geometry.type === 'Polygon') {
+                    nameInput.disabled = false;
+                    idInput.disabled = false;
+                    nameInput.value = feature.properties.name || '';
+                    idInput.value = feature.properties.customId || feature.id;
+                } else {
+                    nameInput.disabled = true;
+                    idInput.disabled = true;
+                    nameInput.value = "Path (No Name)";
+                    idInput.value = feature.id;
+                }
+            } else {
+                nameInput.disabled = true;
+                idInput.disabled = true;
+                nameInput.value = '';
+                idInput.value = '';
+            }
+        }
+
+
+        // --- 3. IMAGE OVERLAY LOGIC ---
+        let imageSourceId = 'floorplan-source';
+        let imageLayerId = 'floorplan-layer';
+        let anchors = []; 
+
+        document.getElementById('imgUpload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => setupImageOverlay(ev.target.result);
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('opacitySlider').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('opacityVal').innerText = Math.round(val * 100) + "%";
+            if (map && map.getLayer(imageLayerId)) {
+                map.setPaintProperty(imageLayerId, 'raster-opacity', val);
+            }
+        });
+
+        function setupImageOverlay(url) {
+            if (!map) return;
+            if (map.getLayer(imageLayerId)) map.removeLayer(imageLayerId);
+            if (map.getSource(imageSourceId)) map.removeSource(imageSourceId);
+            anchors.forEach(m => m.remove());
+            anchors = [];
+
+            const center = map.getCenter();
+            const delta = 0.0005; 
+            
+            const tl = [center.lng - delta, center.lat + delta];
+            const tr = [center.lng + delta, center.lat + delta];
+            const br = [center.lng + delta, center.lat - delta];
+            const bl = [center.lng - delta, center.lat - delta];
+
+            map.addSource(imageSourceId, {
+                type: 'image',
+                url: url,
+                coordinates: [tl, tr, br, bl]
+            });
+
+            // FIX: LAYER ORDERING
+            // Find the first "Draw" layer to place the image UNDER it
+            let firstDrawLayerId = undefined;
+            const layers = map.getStyle().layers;
+            for (const layer of layers) {
+                // Mapbox Draw layers start with 'gl-draw'
+                if (layer.id.startsWith('gl-draw')) {
+                    firstDrawLayerId = layer.id;
+                    break;
+                }
+            }
+
+            // If Draw layers exist, put image before them. If not, put on top of map.
+            map.addLayer({
+                id: imageLayerId,
+                type: 'raster',
+                source: imageSourceId,
+                paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 }
+            }, firstDrawLayerId);
+
+            createAnchor(tl, 'anchor-tl', 0); 
+            createAnchor(tr, 'anchor-tr', 1); 
+            createAnchor(br, 'anchor-bl', 2); 
+            createAnchor(bl, 'anchor-bl', 3); 
+        }
+
+        function createAnchor(lngLat, cssClass, index) {
+            const el = document.createElement('div');
+            el.className = 'anchor-marker ' + cssClass;
+
+            const marker = new maplibregl.Marker({ element: el, draggable: true })
+                .setLngLat(lngLat)
+                .addTo(map);
+
+            marker.on('drag', () => updateImageCoords());
+            anchors[index] = marker;
+        }
+
+        function updateImageCoords() {
+            const coords = anchors.map(m => {
+                const ll = m.getLngLat();
+                return [ll.lng, ll.lat];
+            });
+            const source = map.getSource(imageSourceId);
+            if (source) source.setCoordinates(coords);
+        }
+
+        // --- 4. EXPORT LOGIC ---
+        function exportGeoJSON() {
+            if (!draw) return;
+            const data = draw.getAll();
+            
+            data.features.forEach(f => {
+                if (!f.properties) f.properties = {};
+                if (f.geometry.type === 'Polygon') {
+                    f.properties.type = 'room';
+                    if (!f.properties.name) f.properties.name = 'New Room';
+                } else if (f.geometry.type === 'LineString') {
+                    f.properties.type = 'path';
+                }
+            });
+
+            document.getElementById('output').value = JSON.stringify(data, null, 2);
+        }
+
+        initMap();
+
+    </script>
+</body>
+</html>
